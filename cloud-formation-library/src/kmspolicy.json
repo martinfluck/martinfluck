@@ -1,0 +1,79 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "EnableIAMUserPermissions",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::123238485366:root"
+            },
+            "NotAction": [
+                "kms:ScheduleKeyDeletion",
+                "kms:DeleteImportedKeyMaterial"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowReEncryptUsingtheKey",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": [
+                    "arn:aws:iam::754278119207:root",
+                    "arn:aws:iam::713828041176:root",
+                    "arn:aws:iam::838871099101:root",
+                    "arn:aws:iam::068767989594:root",
+                    "arn:aws:iam::614529975362:root",
+                    "arn:aws:iam::167057239227:root",
+                    "arn:aws:iam::633419547942:root",
+                    "arn:aws:iam::547898946073:root",
+                    "arn:aws:iam::276162276023:root",
+                    "arn:aws:iam::852614416783:root",
+                    "arn:aws:iam::603121014998:root",
+                    "arn:aws:iam::271855762306:root",
+                    "arn:aws:iam::714354970123:root",
+                    "arn:aws:iam::519641947689:root",
+                    "arn:aws:iam::694756276837:root",
+                    "arn:aws:iam::789487702763:root",
+                    "arn:aws:iam::049937833568:root",
+                    "arn:aws:iam::710598504806:root",
+                    "arn:aws:iam::770106725204:root",
+                    "arn:aws:iam::332760374405:root",
+                    "arn:aws:iam::123238485366:user/customer_cloud_endure_user",
+                    "arn:aws:iam::827946218132:root",
+                    "arn:aws:iam::614921876131:root",
+                    "arn:aws:iam::193642435697:root",
+                    "arn:aws:iam::591983477148:root",
+                    "arn:aws:iam::087544862624:root",
+                    "arn:aws:iam::527821128358:root",
+                    "arn:aws:iam::223913917941:root",
+                    "arn:aws:iam::370710828037:root",
+                    "arn:aws:iam::925878169680:root",
+                    "arn:aws:iam::238730084006:root",
+                    "arn:aws:iam::720690034474:root",
+                    "arn:aws:iam::600418508598:root",
+                    "arn:aws:iam::832729833320:root",
+                    "arn:aws:iam::750953909642:root",
+                    "arn:aws:iam::710916450377:root",
+                    "arn:aws:iam::484566599717:root",
+                    "arn:aws:iam::726807569273:root",
+                    "arn:aws:iam::481163016605:root",
+                    "arn:aws:iam::778405033604:root",
+                    "arn:aws:iam::253073030573:root",
+                    "arn:aws:iam::484566599717:root"
+                ]
+            },
+            "Action": [
+                "kms:DescribeKey",
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey",
+                "kms:GenerateDataKeyWithoutPlaintext",
+                "kms:CreateGrant",
+                "kms:ListGrants",
+                "kms:RevokeGrant"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

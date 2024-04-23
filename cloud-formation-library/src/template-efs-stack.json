@@ -1,0 +1,293 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "EFS Storage",
+    "Parameters": {
+        "KmsKeyArn": {
+            "Default": "arn::aws:kms:eu-west-1:",
+            "Description": "Use the KMS CMK ARN generated from the KMS CMS stack",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Default": "",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PrivateSubnet1": {
+            "Default": "",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2": {
+            "Default": "",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AMSSecurityGroup": {
+            "Default": "",
+            "Description": "Security Group used for application and web access",
+            "Type": "String"
+        },
+        "HostName": {
+            "Default": "efs_prod_store",
+            "Description": "Change this parameter according to hostname used on prem",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "ResourceTags": {
+            "all": {
+                "AMSPatchGroup": "",
+                "Backup": "",
+                "BudgetCentre": "",
+                "AppName": "",
+                "AppId": "",
+                "Department": "",
+                "Environment": "",
+                "SupportContact": "",
+                "OwnerTeam": "",
+                "OwnerTeamEmail": "",
+                "mapmigrated": "d-server-02ul7l6hv1bb9x",
+                "awsmigrationprojectid": "MPE01793"
+            },
+            "EFS": {
+                "Backup": "",
+                "PatchOrder": "",
+                "HoursOfOperation": "",
+                "DataClassification": ""
+            }
+        }
+    },
+    "Resources": {
+        "ElasticFileSystem": {
+            "Type": "AWS::EFS::FileSystem",
+            "Properties": {
+                "Encrypted": true,
+                "KmsKeyId": {"Ref": "KmsKeyArn"},
+                "PerformanceMode": "maxIO",
+                "FileSystemTags": 
+                [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "DataClassification",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EFS",
+                                "DataClassification"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {"Ref":"HostName"}
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Backup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EFS",
+                                "Backup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "HoursOfOperations",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EFS",
+                                "HoursOfOperation"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Patch Group",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EFS",
+                                "PatchOrder"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "AZ1MountTarget": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": {
+                    "Ref": "ElasticFileSystem"
+                },
+                "SecurityGroups": [
+                    {"Ref": "EFSSecurityGroup"},
+                    {"Ref": "AMSSecurityGroup"}
+                ],
+                "SubnetId": {"Ref":"PrivateSubnet1"}
+            }
+        },
+        "AZ2MountTarget": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": {
+                    "Ref": "ElasticFileSystem"
+                },
+                "SecurityGroups": [
+                    {"Ref": "EFSSecurityGroup"},
+                    {"Ref": "AMSSecurityGroup"}
+                ],
+                "SubnetId": {"Ref": "PrivateSubnet2"}
+            }
+        },
+        "EFSSecurityGroup":{
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupName": "efs_prod_security_group",
+                "GroupDescription" : "Allow NFS access to client host",
+                "VpcId" : {"Ref" : "VpcId"},
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 111,
+                        "ToPort": 111,
+                        "CidrIp": "10.0.0.0/8"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 2049,
+                        "ToPort": 2049,
+                        "CidrIp": "10.0.0.0/8"
+                    }
+                ]
+            }
+        }
+    }
+}

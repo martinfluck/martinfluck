@@ -1,0 +1,1108 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Template creates an Application Load Balancer in 2 AZs",
+    "Parameters": {
+        "EnvName": {
+            "Description": "(REQUIRED) Enter Environment Type (Dev/QA/Prod)",
+            "Default": "Prod",
+            "Type": "String",
+            "AllowedValues": [
+                "Dev",
+                "QA",
+                "Prod"
+            ]
+        },
+        "Project": {
+            "Type": "String",
+            "Default": "Enter the Application Name here",
+            "Description": "(REQUIRED) Enter the Project Name"
+        },
+        "HostName": {
+            "Default": "Enter the server host name here",
+            "Description": "Change this parameter according to hostname used on prem",
+            "Type": "String"
+        },
+        "VPCId": {
+            "ConstraintDescription": "Must be a valid VPC Id",
+            "Default": "Paste VPC Id here",
+            "Description": "(REQUIRED) Choose the VPC to Deploy Resources",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "CLIENTACCESS": {
+            "Default": "10.0.0.0/8",
+            "Description": "(REQUIRED) Choose the client on-premises IP range",
+            "Type": "String"
+        },
+        "VPCACCESS": {
+            "Default": "10.128.0.0/24",
+            "Type": "String",
+            "Description": "VPC CIDR block"
+        },
+        "PrivateSubnet1": {
+            "Default": "Paste a Subnet Id here",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2": {
+            "Default": "Paste a Subnet Id here",
+            "Description": "(REQUIRED) Select private subnet 2 located in Availability Zone 2",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "Server1": {
+            "Default": "Paste an EC2 Instance Id here",
+            "Description": "(REQUIRED) Select EC2 Target 1 located in Availability Zone 1",
+            "Type": "AWS::EC2::Instance::Id"
+        },
+        "Server2": {
+            "Default": "Paste EC2 Instance Id here",
+            "Description": "(REQUIRED) Select EC2 Target 2 located in Availability Zone 2",
+            "Type": "AWS::EC2::Instance::Id"
+        },
+        "Certificate1": {
+            "Type": "String",
+            "Default": "Paste an uploaded certificate ARN here"
+        },
+        "S3LogsBucket": {
+            "Type": "String",
+            "Default": "Paste S3 Bucket name here"
+        },
+        "HealthyThreshold": {
+            "Type": "Number",
+            "Default": 5
+        }
+    },
+    "Mappings": {
+        "ResourceTags": {
+            "all": {
+                "AMSPatchGroup": "placeholder",
+                "Backup": "true",
+                "BudgetCentre": "placeholder",
+                "AppName": "placeholder",
+                "AppId": "placeholder",
+                "Department": "placeholder",
+                "Environment": "placeholder",
+                "SupportContact": "placeholder",
+                "OwnerTeam": "placeholder",
+                "OwnerTeamEmail": "placeholder",
+                "mapmigrated": "d-server-00jtftf6wtphvt",
+                "awsmigrationprojectid": "MPE01793"
+            },
+            "EC2": {
+                "Backup": true,
+                "PatchOrder": "1",
+                "HoursOfOperation": "24x7",
+                "DataClassification": "Internal-Only Data"
+            }
+        }
+    },
+    "Resources": {
+        "LoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Scheme": "internal",
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Project"
+                            },
+                            {
+                                "Ref": "EnvName"
+                            },
+                            "ALB"
+                        ]
+                    ]
+                },
+                "SecurityGroups": [
+                    {"Ref": "ALBSecurityGroup"}
+                ],
+                "Subnets": [
+                    {
+                        "Ref": "PrivateSubnet1"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2"
+                    }
+                ],
+                "Type": "application",
+                "IpAddressType": "ipv4",
+                "LoadBalancerAttributes": [
+                    {
+                        "Key": "access_logs.s3.enabled",
+                        "Value": "true"
+                    },
+                    {
+                        "Key": "access_logs.s3.bucket",
+                        "Value": {"Ref":"S3LogsBucket"}
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "DataClassification",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "DataClassification"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {"Ref":"HostName"}
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Backup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "Backup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "HoursOfOperations",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "HoursOfOperation"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Patch Group",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "PatchOrder"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TargetGroup1": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckEnabled": true,
+                "HealthCheckPath": "/",
+                "Port": 80,
+                "HealthyThresholdCount": {"Ref": "HealthyThreshold"},
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Project"
+                            },
+                            {
+                                "Ref": "EnvName"
+                            },
+                            "ALB"
+                        ]
+                    ]
+                },
+                "Protocol": "HTTP",
+                "ProtocolVersion": "HTTP1",
+                "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "Server1"
+                        },
+                        "Port": 80
+                    },
+                    {
+                        "Id": {
+                            "Ref": "Server2"
+                        },
+                        "Port": 80
+                    }
+                ],
+                "TargetType": "instance",
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "Tags": [
+                    
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    }
+                ],
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "load_balancing.algorithm.type",
+                        "Value": "least_outstanding_requests"
+                    }
+                ]
+            }
+        },
+        "TargetGroup2": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckEnabled": true,
+                "HealthCheckPath": "/xFramework/services/QuickDoc?wsdl",
+                "Port": 7003,
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Project"
+                            },
+                            {
+                                "Ref": "EnvName"
+                            },
+                            "TG",
+                            "7003"
+                        ]
+                    ]
+                },
+                "HealthyThresholdCount": {"Ref": "HealthyThreshold"},
+                "Protocol": "HTTP",
+                "ProtocolVersion": "HTTP1",
+                "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "Server1"
+                        },
+                        "Port": 7003
+                    },
+                    {
+                        "Id": {
+                            "Ref": "Server2"
+                        },
+                        "Port": 7003
+                    }
+                ],
+                "TargetType": "instance",
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    }
+                ],
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "load_balancing.algorithm.type",
+                        "Value": "round_robin"
+                    }
+                ]
+            }
+        }, 
+        "TargetGroup3": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckEnabled": true,
+                "HealthCheckPath": "/xFramework/services/QuickDoc?wsdl",
+                "Port": 7004,
+                "HealthyThresholdCount": {"Ref": "HealthyThreshold"},
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Project"
+                            },
+                            {
+                                "Ref": "EnvName"
+                            },
+                            "TG",
+                            "7004"
+                        ]
+                    ]
+                },
+                "Protocol": "HTTP",
+                "ProtocolVersion": "HTTP1",
+                "Targets": [
+                    {
+                        "Id": {
+                            "Ref": "Server1"
+                        },
+                        "Port": 7004
+                    },
+                    {
+                        "Id": {
+                            "Ref": "Server2"
+                        },
+                        "Port": 7004
+                    }
+                ],
+                "TargetType": "instance",
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    }
+                ],
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "load_balancing.algorithm.type",
+                        "Value": "round_robin"
+                    }
+                ]
+            }
+        },
+        "Listener1": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "ForwardConfig": {
+                            "TargetGroups": [
+                                {
+                                    "TargetGroupArn": {"Ref": "TargetGroup1"},
+                                    "Weight": 1
+                                }
+                            ]
+                        }
+                    }    
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 80,
+                "Protocol": "HTTP"
+            }
+        },
+        "Listener2": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "Certificates": [
+                    {
+                        "CertificateArn": {"Ref":"Certificate1"}
+                    }
+                ],
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "ForwardConfig": {
+                            "TargetGroups": [
+                                {
+                                    "TargetGroupArn": {"Ref": "TargetGroup1"},
+                                    "Weight": 1
+                                }
+                            ]
+                        }
+                    }    
+                ],
+                "SslPolicy": "ELBSecurityPolicy-2016-08",
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 443,
+                "Protocol": "HTTPS"
+            }
+        },
+        "ALBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable traffic from Network load balancer and Internal IP Range for weblogic applications",
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": {
+                            "Ref": "CLIENTACCESS"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": {
+                            "Ref": "VPCACCESS"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "CLIENTACCESS"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "VPCACCESS"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "_",
+                                [
+                                    {
+                                        "Ref": "Project"
+                                    },
+                                    {
+                                        "Ref": "EnvName"
+                                    },
+                                    "WEB",
+                                    "SERVER",
+                                    "SG"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HealthyHostsLoadBalancerTargetGroup1": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "AlarmDescription": "Alert if the Target Group contains no healthy instances.",
+                "ComparisonOperator": "LessThanOrEqualToThreshold",
+                "Dimensions": [
+                    {
+                        "Name": "LoadBalancer",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "LoadBalancer",
+                                "LoadBalancerFullName"
+                            ]
+                        }
+                    },
+                    {
+                        "Name": "TargetGroup",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "TargetGroup1",
+                                "TargetGroupFullName"
+                            ]
+                        }
+                    }
+                ],
+                "EvaluationPeriods": 2,
+                "InsufficientDataActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "MetricName": "HealthyHostCount",
+                "Namespace": "AWS/ApplicationELB",
+                "OKActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "Period": 60,
+                "Statistic": "Sum",
+                "Threshold": 0.0,
+                "Unit": "Count"
+            }
+        },
+        "HealthyHostsLoadBalancerTargetGroup2": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "AlarmDescription": "Alert if the Target Group contains no healthy instances.",
+                "ComparisonOperator": "LessThanOrEqualToThreshold",
+                "Dimensions": [
+                    {
+                        "Name": "LoadBalancer",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "LoadBalancer",
+                                "LoadBalancerFullName"
+                            ]
+                        }
+                    },
+                    {
+                        "Name": "TargetGroup",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "TargetGroup2",
+                                "TargetGroupFullName"
+                            ]
+                        }
+                    }
+                ],
+                "EvaluationPeriods": 2,
+                "InsufficientDataActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "MetricName": "HealthyHostCount",
+                "Namespace": "AWS/ApplicationELB",
+                "OKActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "Period": 60,
+                "Statistic": "Sum",
+                "Threshold": 0.0,
+                "Unit": "Count"
+            }
+        },
+        "HealthyHostsLoadBalancerTargetGroup3": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "AlarmDescription": "Alert if the Target Group contains no healthy instances.",
+                "ComparisonOperator": "LessThanOrEqualToThreshold",
+                "Dimensions": [
+                    {
+                        "Name": "LoadBalancer",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "LoadBalancer",
+                                "LoadBalancerFullName"
+                            ]
+                        }
+                    },
+                    {
+                        "Name": "TargetGroup",
+                        "Value": {
+                            "Fn::GetAtt": [
+                                "TargetGroup3",
+                                "TargetGroupFullName"
+                            ]
+                        }
+                    }
+                ],
+                "EvaluationPeriods": 2,
+                "InsufficientDataActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "MetricName": "HealthyHostCount",
+                "Namespace": "AWS/ApplicationELB",
+                "OKActions": [
+                    {
+                        "Fn::Sub": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:MMS-Topic"
+                    }
+                ],
+                "Period": 60,
+                "Statistic": "Sum",
+                "Threshold": 0.0,
+                "Unit": "Count"
+            }
+        }
+    }
+}

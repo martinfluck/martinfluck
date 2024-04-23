@@ -1,0 +1,1257 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "",
+  "Resources": {
+    "SSMMainDocument": {
+      "DependsOn": "SSMAttachEBSDocument",
+      "Type": "AWS::SSM::Document",
+      "Properties": {
+        "Content": {
+          "schemaVersion": "0.3",
+          "description": "Shrink Windows instance root volume",
+          "assumeRole": "{{ AutomationAssumeRole }}",
+          "parameters": {
+            "InstanceId": {
+              "type": "String",
+              "description": "(Required) ID of your EC2 Windows managed instance.",
+              "allowedPattern": "^[m]{0,1}i-[a-z0-9]{8,17}$"
+            },
+            "RebootInstanceBeforeTakingImage": {
+              "type": "Boolean",
+              "description": "(Optional) Default is False (no reboot). If set True, SSM will reboot the instance before creating a snapshot.",
+              "default": false,
+              "allowedValues": [
+                "true",
+                "false"
+              ]
+            },
+            "LatestAmi": {
+              "type": "String",
+              "default": "{{ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}",
+              "description": "The latest Amazon Linux 2 AMI queried from the public parameter."
+            },
+            "HelperInstanceType": {
+              "type": "String",
+              "default": "m5.4xlarge",
+              "description": "EC2 Instance type to use for the helper instance, we recommend an EBS Optimized instance type is used."
+            },
+            "AutomationAssumeRole": {
+              "type": "String",
+              "description": "(Optional) The IAM role for this execution. If no role is specified, AWS Systems Manager Automation will use the permissions of the user that executes this document.",
+              "default": ""
+            },
+            "PercentageFreeSpaceRequired": {
+              "type": "String",
+              "description": "Percentage of free space required after right-sizing. This is based current used space currently.",
+              "default": "25"
+            },
+            "takeSnapShot": {
+              "type": "Boolean",
+              "description": "(Optional) A boolean flag to determine whether to create a snapshot before resizing of the volume and the file system(True by default).",
+              "default": true,
+              "allowedValues": [
+                "true",
+                "false"
+              ]
+            },
+            "ExcludedMountPoints": {
+              "type": "String",
+              "description": "(Optional) Comma delimited list of mount points to exclude from right sizing. i.e. To exclude the C and D drive on Windows enter 'C,D'",
+              "default": ""
+            }
+          },
+          "mainSteps": [
+            {
+              "name": "assertInstanceIsWindows",
+              "action": "aws:assertAwsResourceProperty",
+              "onFailure": "Abort",
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeInstances",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "PropertySelector": "$.Reservations[0].Instances[0].Platform",
+                "DesiredValues": [
+                  "windows"
+                ]
+              },
+              "isCritical": "true",
+              "nextStep": "assertInstanceIsManagedInstance"
+            },
+            {
+              "name": "assertInstanceIsManagedInstance",
+              "action": "aws:assertAwsResourceProperty",
+              "inputs": {
+                "Service": "ssm",
+                "Api": "DescribeInstanceInformation",
+                "InstanceInformationFilterList": [
+                  {
+                    "key": "InstanceIds",
+                    "valueSet": [
+                      "{{ InstanceId }}"
+                    ]
+                  }
+                ],
+                "PropertySelector": "$.InstanceInformationList[0].PingStatus",
+                "DesiredValues": [
+                  "Online"
+                ]
+              },
+              "isCritical": "false",
+              "nextStep": "describeInstance"
+            },
+            {
+              "name": "describeInstance",
+              "action": "aws:executeAwsApi",
+              "description": "Describes the provided instance",
+              "onFailure": "Abort",
+              "isCritical": true,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeInstances",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ]
+              },
+              "outputs": [
+                {
+                  "Name": "RootDeviceName",
+                  "Selector": "$.Reservations[0].Instances[0].RootDeviceName",
+                  "Type": "String"
+                },
+                {
+                  "Name": "IamInstanceProfile",
+                  "Selector": "$.Reservations[0].Instances[0].IamInstanceProfile.Arn",
+                  "Type": "String"
+                },
+                {
+                  "Name": "SubnetId",
+                  "Selector": "$.Reservations[0].Instances[0].NetworkInterfaces[0].SubnetId",
+                  "Type": "String"
+                },
+                {
+                  "Name": "SecurityGroupIds",
+                  "Selector": "$.Reservations[0].Instances[0].NetworkInterfaces[0].Groups[0].GroupId",
+                  "Type": "String"
+                },
+                {
+                  "Name": "AvailabilityZone",
+                  "Selector": "$.Reservations[0].Instances[0].Placement.AvailabilityZone",
+                  "Type": "String"
+                },
+                {
+                  "Name": "Keypair",
+                  "Selector": "$.Reservations[0].Instances[0].KeyName",
+                  "Type": "String"
+                },
+                {
+                  "Name": "Platform",
+                  "Selector": "$.Reservations[0].Instances[0].Platform",
+                  "Type": "String"
+                }
+              ]
+            },
+            {
+              "name": "describeInstanceRootVolume",
+              "action": "aws:executeAwsApi",
+              "description": "Describes the provided instance's EBS root volume.",
+              "onFailure": "Abort",
+              "isCritical": true,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeVolumes",
+                "Filters": [
+                  {
+                    "Name": "attachment.instance-id",
+                    "Values": [
+                      "{{ InstanceId }}"
+                    ]
+                  },
+                  {
+                    "Name": "attachment.device",
+                    "Values": [
+                      "{{ describeInstance.RootDeviceName }}"
+                    ]
+                  }
+                ]
+              },
+              "outputs": [
+                {
+                  "Name": "RootDeviceVolumeId",
+                  "Selector": "$.Volumes[0].Attachments[0].VolumeId",
+                  "Type": "String"
+                },
+                {
+                  "Name": "RootDeviceVolumeType",
+                  "Selector": "$.Volumes[0].Attachments[0].VolumeType",
+                  "Type": "String"
+                }
+              ]
+            },
+            {
+              "name": "branchTakeSnapshot",
+              "action": "aws:branch",
+              "onFailure": "Abort",
+              "inputs": {
+                "Choices": [
+                  {
+                    "NextStep": "branchShrinkOSCheck",
+                    "Variable": "{{ takeSnapShot }}",
+                    "BooleanEquals": false
+                  }
+                ],
+                "Default": "branchOnRebootInstanceBeforeTakingImage"
+              },
+              "isCritical": "true"
+            },
+            {
+              "name": "branchOnRebootInstanceBeforeTakingImage",
+              "action": "aws:branch",
+              "onFailure": "Abort",
+              "inputs": {
+                "Choices": [
+                  {
+                    "NextStep": "createImageWithReboot",
+                    "Variable": "{{ RebootInstanceBeforeTakingImage }}",
+                    "BooleanEquals": true
+                  }
+                ],
+                "Default": "createImageWithNoReboot"
+              },
+              "isCritical": "true"
+            },
+            {
+              "name": "createImageWithReboot",
+              "action": "aws:executeAwsApi",
+              "maxAttempts": 2,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "CreateImage",
+                "InstanceId": "{{ InstanceId }}",
+                "Name": "ShrinkVolume_ImageFromOriginalInstance_{{ automation:EXECUTION_ID }}",
+                "NoReboot": false
+              },
+              "outputs": [
+                {
+                  "Name": "ImageId",
+                  "Selector": "$.ImageId",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "describeInstanceImage"
+            },
+            {
+              "name": "createImageWithNoReboot",
+              "action": "aws:executeAwsApi",
+              "maxAttempts": 2,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "CreateImage",
+                "InstanceId": "{{ InstanceId }}",
+                "Name": "ShrinkVolume_ImageOfInstance_{{ automation:EXECUTION_ID }}",
+                "NoReboot": true
+              },
+              "outputs": [
+                {
+                  "Name": "ImageId",
+                  "Selector": "$.ImageId",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "describeInstanceImage"
+            },
+            {
+              "name": "describeInstanceImage",
+              "action": "aws:executeAwsApi",
+              "maxAttempts": 2,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeImages",
+                "Filters": [
+                  {
+                    "Name": "name",
+                    "Values": [
+                      "ShrinkVolume_ImageOfInstance_{{ automation:EXECUTION_ID }}"
+                    ]
+                  }
+                ]
+              },
+              "outputs": [
+                {
+                  "Name": "ImageId",
+                  "Selector": "$.Images[0].ImageId",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "waitTillOriginalInstanceImageImageReady"
+            },
+            {
+              "name": "waitTillOriginalInstanceImageImageReady",
+              "action": "aws:waitForAwsResourceProperty",
+              "maxAttempts": 2,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeImages",
+                "ImageIds": [
+                  "{{ describeInstanceImage.ImageId }}"
+                ],
+                "PropertySelector": "$.Images[0].State",
+                "DesiredValues": [
+                  "available"
+                ]
+              },
+              "nextStep": "branchShrinkOSCheck"
+            },
+            {
+              "name": "branchShrinkOSCheck",
+              "action": "aws:branch",
+              "onFailure": "Abort",
+              "inputs": {
+                "Choices": [
+                  {
+                    "NextStep": "shrinkInstanceVolumesWindows",
+                    "Variable": "{{describeInstance.Platform}}",
+                    "StringEquals": "windows"
+                  },
+                  {
+                    "NextStep": "assessInstanceFileSystemsLinux",
+                    "Variable": "{{describeInstance.Platform}}",
+                    "StringEquals": "linux"
+                  }
+                ],
+                "Default": "assessInstanceFileSystemsLinux"
+              },
+              "isCritical": "true"
+            },
+            {
+              "name": "shrinkInstanceVolumesWindows",
+              "action": "aws:runCommand",
+              "maxAttempts": 3,
+              "onFailure": "Abort",
+              "inputs": {
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "DocumentName": "AWS-RunPowerShellScript",
+                "Parameters": {
+                  "commands": [
+                    " # Runs a pre-checks on a per-partition basis to analyze if we should ",
+                    "# Shrink the partition or not. ",
+                    " ",
+                    "$supportedFsTypes = 'NTFS', 'ReFS' # FAT and FAT32 do not appear to be supported for decrease and CSVFS should not be attempted because it is used for clustered shared volumes ",
+                    "$supportedDriveTypes = 'Fixed' ",
+                    "$ShrinkPercent = \"{{ PercentageFreeSpaceRequired }}\" ",
+                    "$ExcludedMountPointsString = \"{{ ExcludedMountPoints }}\" ",
+                    "$ExcludedMountPoints = $ExcludedMountPointsString.Split(\",\") ",
+                    "$ebsTempCacheDir = 'C:\\ProgramData\\Amazon\\ebs_temp_cache_dir' ",
+                    "$volumesToShink = 0 ",
+                    "$volumesBelowThreshold = 0 ",
+                    " ",
+                    "$token = Invoke-RestMethod -Headers @{\"X-aws-ec2-metadata-token-ttl-seconds\" = \"21600\"} -Method PUT \u2013Uri 'http://169.254.169.254/latest/api/token' ",
+                    "$availabilityZone = Invoke-RestMethod -Headers @{\"X-aws-ec2-metadata-token\" = \"$token\"} -Method GET -Uri 'http://169.254.169.254/2019-10-01/meta-data/placement/availability-zone' ",
+                    " ",
+                    "# remove the availability zone letter identifier from the end of the string to determine the region ",
+                    "$region = $availabilityZone.Substring(0, $availabilityZone.Length - 1) ",
+                    " ",
+                    "# query for the AWS NVMe driver in use ",
+                    "$awsNvmeDriver = Get-WmiObject Win32_PnPSignedDriver | Where-Object {$_.DeviceName -Clike \"AWS NVM*\"} | Select-Object -ExpandProperty DriverVersion ",
+                    " ",
+                    "$result = @() ",
+                    " ",
+                    "try { ",
+                    "    # list all of the volumes with a drive letter ",
+                    "    $volumes = Get-Volume | Where-Object DriveLetter ",
+                    "} ",
+                    "catch [System.Management.Automation.CommandNotFoundException] { ",
+                    "    if ((Get-CimInstance Win32_OperatingSystem).Version -le 6.2) { ",
+                    "        $reason = \"Filesystem modification is not supported on Server 2008 R2 and earlier ($((Get-CimInstance Win32_OperatingSystem).Caption) detected)\" ",
+                    "    } ",
+                    "    else { ",
+                    "        $reason = \"Filesystem decrease is not supported because the Storage module failed to load or run\" ",
+                    "    } ",
+                    "    $property = [ordered]@{ ",
+                    "        'VolumeId'   = '' ",
+                    "        'MountPoint' = '' ",
+                    "        'Extend'     = 0 ",
+                    "        'ExtendTo'   = 0 ",
+                    "        'Region'     = $region ",
+                    "        'Reason'     = $reason ",
+                    "        'BootDisk'   = $false ",
+                    "    } ",
+                    "    $result += New-Object -TypeName PSObject -Property $property ",
+                    "} ",
+                    " ",
+                    "foreach ($volume in $volumes) { ",
+                    "    $shrink = $false ",
+                    " ",
+                    "    $usage = (1.00 - ($volume.SizeRemaining / $volume.Size)) ",
+                    "    $usage = [math]::Round($usage,4) * 100 ",
+                    " ",
+                    "    $partition = Get-Partition -DriveLetter $volume.DriveLetter -ErrorAction SilentlyContinue ",
+                    "    $disk = $partition | Get-Disk ",
+                    " ",
+                    "    if ($disk.SerialNumber) { ",
+                    "        $ebsVolumeId = $disk.SerialNumber -replace \"_[^ ]*$\" -replace \"vol\", \"vol-\" ",
+                    " ",
+                    "        $ebsExtensionsCacheFile = Join-Path $ebsTempCacheDir $ebsVolumeId ",
+                    " ",
+                    "        $isBootDisk = $disk.BootFromDisk ",
+                    " ",
+                    "        if (-not $disk) { ",
+                    "            $reason = \"Usage: $($usage) - Unsupported dynamic disk and/or RAID\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($volume.DriveType -notin $supportedDriveTypes) { ",
+                    "            $reason = \"Usage: $($usage) - Unsupported drive type: $($volume.DriveType)\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($volume.FileSystem -notin $supportedFsTypes) { ",
+                    "            $reason = \"Usage: $($usage) - Unsupported partition filesystem: $($volume.FileSystem)\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        }elseif ($partition.Offset -lt (Get-Partition -DiskNumber $disk.Number | Sort-Object Offset -Descending | Select-Object -First 1).Offset) { ",
+                    "            $reason = \"Usage: $($usage) - Partition is not at the end of the disk so it cannot be modified\" ",
+                    "            $CurrentSize = Get-Partition -DriveLetter $volume.DriveLetter | select @{Name=\"Size\";Expression={$_.Size/1GB}} | select -ExpandProperty Size ",
+                    "            $volumesAboveThreshold++ ",
+                    "        }elseif (($ebsModification -ne $null) -AND ($ebsModification.IndexOf($ebsVolumeId) -ge 0)) { ",
+                    "            $reason = \"Usage: $($usage) - Unsupported EBS volume modification state\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($disk.BusType -eq 'NVMe' -and (-not $awsNvmeDriver)) { ",
+                    "            $reason = \"Usage: $($usage) - Amazon NVMe driver is not installed\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($disk.BusType -eq 'ATA') { ",
+                    "            $reason = \"Usage: $($usage) - Amazon PV driver is not installed\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($ebsVolumeId.IndexOf(\"vol-\") -eq -1) { ",
+                    "            $reason = \"Usage: $($usage) - The EBS volumeId cannot safely determine\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        elseif ($ExcludedMountPoints -contains $volume.DriveLetter) { ",
+                    "            $reason = \"Usage: $($usage) - Mount point explicitly excluded from right sizing\" ",
+                    "            $volumesAboveThreshold++ ",
+                    "        } ",
+                    "        else { ",
+                    "            # all checks have passed so the volume can be decreased ",
+                    "            $shrink = $true ",
+                    "            $reason = 'Shrink' ",
+                    "            $volumesToShrink++ ",
+                    "            $volumesAboveThreshold++ ",
+                    " ",
+                    "            # If shrinkToSize is bigger than capsize, set it to capsize ",
+                    "            if ($shrinkToSize/1GB -ge $thresholdGibibytes) { ",
+                    "                [uint64] $shrinkToSize = [uint64] $thresholdGibibytes*1GB ",
+                    "            } ",
+                    " ",
+                    "            # Health check verification using Repair-Volume ",
+                    "            $message = Repair-Volume -DriveLetter $volume.DriveLetter -Scan -ErrorAction SilentlyContinue ",
+                    " ",
+                    "            if ($message -eq \"NoErrorsFound\" -and $disk.HealthStatus -eq \"Healthy\" -and $volume.HealthStatus -eq \"Healthy\" ) { ",
+                    " ",
+                    "                # Getting Max and Min Sizes to Shrink ",
+                    "                $CurrentSize = Get-Partition -DriveLetter $volume.DriveLetter | select @{Name=\"Size\";Expression={$_.Size/1GB}} | select -ExpandProperty Size ",
+                    "                $MinSize = $(Get-Partition -Driveletter $volume.DriveLetter | Get-PartitionSupportedSize  | select @{Name=\"MinSize\";Expression={$_.SizeMin/1GB}} | select -ExpandProperty MinSize) ",
+                    "                $NewSize = [math]::Ceiling((($MinSize / 100) * $ShrinkPercent) + $MinSize) ",
+                    "                $reduction = $CurrentSize - $NewSize ",
+                    "                $NewDiskSize = [math]::Ceiling(($disk.Size/1GB) - $reduction) ",
+                    " ",
+                    "                $shrinkToSize = ([uint64] $NewSize * 1GB) ",
+                    " ",
+                    "                # Resizing (Shrinking) the volume ",
+                    "                if ($CurrentSize -gt $NewSize) { ",
+                    "                    Resize-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Size $shrinkToSize ",
+                    "                } else { ",
+                    "                    # new size is bigger than the existing volume size volume needs to be increased in size. ",
+                    "                    $reason = \"Volume requires increasing in size to $NewSize GB.\" ",
+                    "                    $shrink = $false ",
+                    "                } ",
+                    " ",
+                    "            } elseif ($message -ne \"NoErrorsFound\") { ",
+                    "                # Disk repair return error, mark as not to shrink. ",
+                    "                $reason = \"Repair-Volume: $message\" ",
+                    "                $shrink = $false ",
+                    "            } elseif ($disk.HealthStatus -ne \"Healthy\" -or $volume.HealthStatus -ne \"Healthy\" ) { ",
+                    "                # Disk not clean, mark as not to shrink. ",
+                    "                $reason = \"Disk HealthStatus: $disk.HealthStatus, Volume HealthStatus: $volume.HealthStatus\" ",
+                    "                $shrink = $false ",
+                    "            } ",
+                    "        } ",
+                    " ",
+                    " ",
+                    "    } ",
+                    " ",
+                    "    if ($shrink -eq $false) { ",
+                    "        $shrinkToSize = 0 ",
+                    "    } ",
+                    " ",
+                    "    $properties = [ordered]@{ ",
+                    "        'VolumeId'   = $ebsVolumeId ",
+                    "        'MountPoint' = $volume.DriveLetter ",
+                    "        'ExistingPartitionSize' = $CurrentSize ",
+                    "        'Shrink'     = [int]$shrink # ",
+                    "        'ShrinkTo'   = $NewSize ",
+                    "        'NewEBSVolumeSize' = $NewDiskSize ",
+                    "        'Region'     = $region ",
+                    "        'Reason'     = $reason ",
+                    "        'BootDisk'   = $isBootDisk ",
+                    "    } ",
+                    " ",
+                    "    $result += New-Object -TypeName PSObject -Property $properties ",
+                    " ",
+                    "    Remove-Variable volume, CurrentSize, NewDiskSize, disk, usage, reason, ebsVolumeId, ebsModification, ebsExtensionsCacheFile, shrinkToSize, NewSize, expansions -ErrorAction SilentlyContinue ",
+                    " ",
+                    "} ",
+                    " ",
+                    "$output_lines = $result | ConvertTo-Json -Compress ",
+                    "$output_lines ",
+                    " "
+                  ],
+                  "executionTimeout": "172800"
+                }
+              },
+              "nextStep": "getShrinkableEBSVolumesWindows"
+            },
+            {
+              "name": "assessInstanceFileSystemsLinux",
+              "action": "aws:runCommand",
+              "maxAttempts": 3,
+              "onFailure": "Abort",
+              "inputs": {
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "DocumentName": "AWS-RunShellScript",
+                "Parameters": {
+                  "commands": [
+                    " "
+                  ]
+                }
+              },
+              "nextStep": "stopInstance"
+            },
+            {
+              "name": "getShrinkableEBSVolumesWindows",
+              "action": "aws:executeScript",
+              "onFailure": "Abort",
+              "isCritical": true,
+              "description": "Build list of shrinkable volume Ids based on assess output.",
+              "maxAttempts": 2,
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "handler",
+                "InputPayload": {
+                  "volumes": "{{ shrinkInstanceVolumesWindows.Output }}"
+                },
+                "Script": "import boto3\nimport json\n\nec2_client = boto3.client(\"ec2\")\n\n\ndef handler(event, _):\n    volumes = json.loads(event[\"volumes\"])\n    shrinkable_volume_ids = []\n    boot_volume_id = ''\n\n    if type(volumes) is list:\n        for volume in volumes:\n            if verify_new_volume_parameters(volume):\n                shrinkable_volume_ids.append(volume[\"VolumeId\"])\n                if volume['BootDisk']:\n                    boot_volume_id = volume[\"VolumeId\"]\n\n    else:\n        if volumes and verify_new_volume_parameters(volumes):\n            shrinkable_volume_ids.append(volumes[\"VolumeId\"])\n            if volumes['BootDisk']:\n                boot_volume_id = volumes[\"VolumeId\"]\n\n    return {'VolumeIds': shrinkable_volume_ids,\n            'VolumeIdsAsString': ','.join(shrinkable_volume_ids),\n            'VolumeCount': len(shrinkable_volume_ids),\n            'BootVolumeId': boot_volume_id}\n\n\ndef verify_new_volume_parameters(volume):\n\n    if 'Shrink' not in volume:\n        # Shrink not present invalid object.\n        return False\n\n    if 'NewEBSVolumeSize' not in volume:\n        # NewEBSVolumeSize not present invalid object.\n        return False\n\n    if volume['Shrink'] != 1:\n        # Shrink not present not requested.\n        print(\"Volume shrinking not required %s\" % volume['MountPoint'])\n        return False\n\n    return True\n\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload.VolumeIds",
+                  "Type": "StringList"
+                },
+                {
+                  "Name": "VolumeIdsAsString",
+                  "Selector": "$.Payload.VolumeIdsAsString",
+                  "Type": "String"
+                },
+                {
+                  "Name": "VolumeCount",
+                  "Selector": "$.Payload.VolumeCount",
+                  "Type": "Integer"
+                },
+                {
+                  "Name": "BootVolumeId",
+                  "Selector": "$.Payload.BootVolumeId",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "branchVolumesRequiringShrinking"
+            },
+            {
+              "name": "branchVolumesRequiringShrinking",
+              "action": "aws:branch",
+              "onFailure": "Abort",
+              "inputs": {
+                "Choices": [
+                  {
+                    "NextStep": "stopInstance",
+                    "Variable": "{{ getShrinkableEBSVolumesWindows.VolumeCount }}",
+                    "NumericGreater": 0
+                  }
+                ]
+              },
+              "isCritical": "true",
+              "isEnd": "true"
+            },
+            {
+              "name": "stopInstance",
+              "action": "aws:executeAwsApi",
+              "inputs": {
+                "Api": "StopInstances",
+                "Service": "ec2",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ]
+              },
+              "nextStep": "waitForInstanceToStop"
+            },
+            {
+              "name": "waitForInstanceToStop",
+              "action": "aws:waitForAwsResourceProperty",
+              "timeoutSeconds": 120,
+              "inputs": {
+                "DesiredValues": [
+                  "stopped"
+                ],
+                "Api": "DescribeInstances",
+                "PropertySelector": "$.Reservations[0].Instances[0].State.Name",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "Service": "ec2"
+              },
+              "nextStep": "detachEBSVolumes"
+            },
+            {
+              "name": "detachEBSVolumes",
+              "action": "aws:executeScript",
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "handler",
+                "InputPayload": {
+                  "VolumeIds": "{{ getShrinkableEBSVolumesWindows.VolumeIds }}"
+                },
+                "Script": "import boto3\nimport botocore.exceptions\nimport json\n\nec2_client = boto3.client(\"ec2\")\n\n\ndef handler(event, _):\n    volumes = event[\"VolumeIds\"]\n    successful_detachments = []\n    unsuccessful_detachments = []\n    volume_ids = []\n\n    for volume in volumes:\n        volume_ids.append(volume)\n        detachment = detach_ebs_volume(volume)\n        if detachment:\n            successful_detachments.append(volume)\n        else:\n            unsuccessful_detachments.append(volume)\n\n    if len(unsuccessful_detachments) > 0:\n        print(\"The following volumes were not detached successfully %s\" % unsuccessful_detachments)\n\n    return successful_detachments\n\n\ndef detach_ebs_volume(volume_id):\n    try:\n        volume_detachment = ec2_client.detach_volume(\n            VolumeId=volume_id\n        )\n    except botocore.exceptions.ClientError as error_detach_volume:\n        print(\"ERROR: detachment of EBS volume %s\" % error_detach_volume)\n        return None\n\n    return volume_detachment\n\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "waitOriginalVolumeDetachments"
+            },
+            {
+              "name": "waitOriginalVolumeDetachments",
+              "action": "aws:waitForAwsResourceProperty",
+              "timeoutSeconds": 240,
+              "onFailure": "step:attachOriginalEBSVolumesInstance",
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeVolumes",
+                "VolumeIds": "{{ detachEBSVolumes.VolumeIds }}",
+                "PropertySelector": "$.Volumes[0].State",
+                "DesiredValues": [
+                  "available"
+                ]
+              },
+              "nextStep": "createNewEBSVolumes"
+            },
+            {
+              "name": "createNewEBSVolumes",
+              "action": "aws:executeScript",
+              "onFailure": "step:attachOriginalEBSVolumesInstance",
+              "isCritical": true,
+              "description": "Create new EBS volumes.",
+              "maxAttempts": 2,
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "create_ebs",
+                "InputPayload": {
+                  "volumes": "{{ shrinkInstanceVolumesWindows.Output }}"
+                },
+                "Script": "import boto3\nimport botocore.exceptions\nimport json\n\nec2_client = boto3.client(\"ec2\")\n\n\ndef create_ebs(event, _):\n    volumes = json.loads(event[\"volumes\"])\n    new_volume_ids = []\n    new_volumes = []\n    boot_volume_id = ''\n\n    if type(volumes) is list:\n        for volume in volumes:\n            new_volume = create_ebs_volume(volume)\n            if new_volume:\n                new_volume_ids.append(new_volume[\"VolumeId\"])\n                new_volumes.append(new_volume)\n                if volume['BootDisk']:\n                    boot_volume_id = new_volume[\"VolumeId\"]\n\n    else:\n        new_volume = create_ebs_volume(volumes)\n        if new_volume:\n            new_volume_ids.append(new_volume[\"VolumeId\"])\n            new_volumes.append(new_volume)\n            if volumes['BootDisk']:\n                boot_volume_id = new_volume[\"VolumeId\"]\n\n    print(new_volumes)\n\n    return {'VolumeIds': new_volume_ids, 'VolumeIdsAsString': ','.join(new_volume_ids), 'BootVolumeId': boot_volume_id}\n\n\ndef verify_new_volume_parameters(volume):\n    if 'Shrink' not in volume:\n        # Shrink not present invalid object.\n        return False\n\n    if 'NewEBSVolumeSize' not in volume:\n        # NewEBSVolumeSize not present invalid object.\n        return False\n\n    if volume['Shrink'] != 1:\n        # Shrink not present not requested.\n        print(\"Volume shrinking not required %s\" % volume['MountPoint'])\n        return False\n\n    return True\n\n\ndef get_original_volume(volume):\n    try:\n        existing_volumes = ec2_client.describe_volumes(\n            VolumeIds=[\n                volume\n            ]\n        )\n    except botocore.exceptions.ClientError as error_existing_volume:\n        print(\"ERROR: Error getting exiting EBS volume %s\" % error_existing_volume)\n        return None\n\n    if existing_volumes:\n        if 'Volumes' in existing_volumes and len(existing_volumes['Volumes']) == 1:\n            return existing_volumes['Volumes'][0]\n        else:\n            return None\n    else:\n        return None\n\n\ndef create_ebs_volume(volume):\n    new_volume = None\n    volumes_supporting_iops = ['gp3', 'io1', 'io2']\n\n    if verify_new_volume_parameters(volume):\n        original_volume = get_original_volume(volume['VolumeId'])\n\n        if original_volume:\n            copy_original_volume_parameters = {\n                'AvailabilityZone': original_volume['AvailabilityZone'],\n                'VolumeType': original_volume['VolumeType'],\n                'Encrypted': original_volume['Encrypted']\n            }\n\n            if 'MultiAttachEnabled' in original_volume:\n                copy_original_volume_parameters['MultiAttachEnabled'] = original_volume['MultiAttachEnabled']\n            if 'Iops' in original_volume and original_volume['VolumeType'] in volumes_supporting_iops:\n                copy_original_volume_parameters['Iops'] = original_volume['Iops']\n            if 'Throughput' in original_volume and original_volume['VolumeType'] == 'gp3':\n                copy_original_volume_parameters['Throughput'] = original_volume['Throughput']\n            if 'KmsKeyId' in original_volume:\n                copy_original_volume_parameters['KmsKeyId'] = original_volume['KmsKeyId']\n            if 'Tags' in original_volume:\n                copy_original_volume_parameters['TagSpecifications'] = [\n                    {\n                        'ResourceType': \"volume\",\n                        'Tags': original_volume['Tags']\n                    }\n                ]\n\n            try:\n                new_volume = ec2_client.create_volume(\n                    Size=volume['NewEBSVolumeSize'],\n                    **copy_original_volume_parameters\n                )\n            except botocore.exceptions.ClientError as error_create_volume:\n                print(\"ERROR: creation of new EBS volume %s\" % error_create_volume)\n\n            print(\"New EBS volume created for %s\" % volume['MountPoint'])\n            return new_volume\n        else:\n            print(\"Existing volume error.\")\n            return None\n    else:\n        print(\"New volume parameter error.\")\n        return None\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload.VolumeIds",
+                  "Type": "StringList"
+                },
+                {
+                  "Name": "VolumeIdsAsString",
+                  "Selector": "$.Payload.VolumeIdsAsString",
+                  "Type": "String"
+                },
+                {
+                  "Name": "BootVolumeId",
+                  "Selector": "$.Payload.BootVolumeId",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "launchHelperInstance"
+            },
+            {
+              "name": "launchHelperInstance",
+              "action": "aws:runInstances",
+              "maxAttempts": 3,
+              "timeoutSeconds": 1200,
+              "onFailure": "step:attachOriginalEBSVolumesInstance",
+              "inputs": {
+                "ImageId": "{{LatestAmi}}",
+                "InstanceType": "{{HelperInstanceType}}",
+                "MinInstanceCount": 1,
+                "MaxInstanceCount": 1,
+                "IamInstanceProfileArn": "{{ describeInstance.IamInstanceProfile }}",
+                "SubnetId": "{{ describeInstance.SubnetId }}",
+                "SecurityGroupIds": [
+                  "{{ describeInstance.SecurityGroupIds }}"
+                ],
+                "TagSpecifications": [
+                  {
+                    "ResourceType": "instance",
+                    "Tags": [
+                      {
+                        "Key": "Name",
+                        "Value": "AWS EBS right-sizing helper instance for {{ InstanceId }}"
+                      },
+                      {
+                        "Key": "InstanceIdBeingRightSized",
+                        "Value": "{{ InstanceId }}"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "outputs": [
+                {
+                  "Name": "InstanceId",
+                  "Selector": "InstanceIds[0]",
+                  "Type": "String"
+                }
+              ],
+              "nextStep": "attachOriginalEBSVolumesToHelper"
+            },
+            {
+              "name": "attachOriginalEBSVolumesToHelper",
+              "action": "aws:executeAutomation",
+              "inputs": {
+                "DocumentName": "Right-sizing-multi-attach-EBS",
+                "RuntimeParameters": {
+                  "AutomationAssumeRole": "{{ AutomationAssumeRole }}",
+                  "InstanceId": "{{ launchHelperInstance.InstanceId }}",
+                  "VolumeIds": "{{ detachEBSVolumes.VolumeIds }}"
+                }
+              },
+              "onFailure": "step:detachOriginalEBSVolumesFromHelper",
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "attachNewEBSVolumesToHelper"
+            },
+            {
+              "name": "attachNewEBSVolumesToHelper",
+              "action": "aws:executeAutomation",
+              "inputs": {
+                "DocumentName": "Right-sizing-multi-attach-EBS",
+                "RuntimeParameters": {
+                  "AutomationAssumeRole": "{{ AutomationAssumeRole }}",
+                  "InstanceId": "{{ launchHelperInstance.InstanceId }}",
+                  "VolumeIds": "{{ createNewEBSVolumes.VolumeIds }}"
+                }
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "copyDataToNewVolume"
+            },
+            {
+              "name": "copyDataToNewVolume",
+              "action": "aws:runCommand",
+              "onFailure": "step:detachOriginalEBSVolumesFromHelper",
+              "onCancel": "step:detachOriginalEBSVolumesFromHelper",
+              "maxAttempts": 3,
+              "timeoutSeconds": 1200,
+              "inputs": {
+                "InstanceIds": [
+                  "{{ launchHelperInstance.InstanceId }}"
+                ],
+                "DocumentName": "AWS-RunShellScript",
+                "Parameters": {
+                  "commands": [
+                    "#!/bin/bash ",
+                    " ",
+                    "oldVolumeIds=\"{{ getShrinkableEBSVolumesWindows.VolumeIdsAsString }}\" ",
+                    "newVolumeIds=\"{{ createNewEBSVolumes.VolumeIdsAsString }}\" ",
+                    "oldVolumeIds=${oldVolumeIds//[- ]/} ",
+                    "newVolumeIds=${newVolumeIds//[- ]/} ",
+                    "validationErrors=0 ",
+                    " ",
+                    "#Convert volume IDs to arrays. ",
+                    "readarray -d , -t oldVolumeIdArr < <(printf \"%s\" \"$oldVolumeIds\") ",
+                    "readarray -d , -t newVolumeIdArr < <(printf \"%s\" \"$newVolumeIds\") ",
+                    " ",
+                    "validate_volumes () { ",
+                    "  local sourceDiskSize=$(lsblk -b -o SERIAL,NAME,SIZE | grep $1 | head -n1 | rev | cut -d \" \" -f1 | rev) ",
+                    "  local sourceDiskName=$(lsblk -b -o SERIAL,NAME,SIZE | grep $1 | head -n1 | cut -d \" \" -f2) ",
+                    "  local targetDiskSize=$(lsblk -b -o SERIAL,NAME,SIZE | grep $2 | head -n1 | rev | cut -d \" \" -f1 | rev) ",
+                    "  local targetDiskName=$(lsblk -b -o SERIAL,NAME,SIZE | grep $2 | head -n1 | cut -d \" \" -f2) ",
+                    "  echo \"$1(${sourceDiskName})[${sourceDiskSize} Bytes] ---> $2(${targetDiskName})[${targetDiskSize} Bytes]\" ",
+                    "  if [[ \"$sourceDiskName\" == \"\" || \"$targetDiskName\" == \"\" ]]; then ",
+                    "    local func_result=\"-- ERROR: Source or target disk not found.\" ",
+                    "    echo \"$func_result\" ",
+                    "  elif [[ $targetDiskSize -gt $sourceDiskSize ]]; then ",
+                    "    local func_result=\"-- ERROR: Target disk is larger than source.\" ",
+                    "    echo \"$func_result\" ",
+                    "  else ",
+                    "    local func_result=\"-- Passed checks.\" ",
+                    "    echo \"$func_result\" ",
+                    "  fi ",
+                    "  echo ",
+                    "} ",
+                    " ",
+                    "copy_volumes () { ",
+                    "  local sourceDiskSize=$(lsblk -b -o SERIAL,NAME,SIZE | grep $1 | head -n1 | rev | cut -d \" \" -f1 | rev) ",
+                    "  local sourceDiskName=$(lsblk -b -o SERIAL,NAME,SIZE | grep $1 | head -n1 | cut -d \" \" -f2) ",
+                    "  local targetDiskSize=$(lsblk -b -o SERIAL,NAME,SIZE | grep $2 | head -n1 | rev | cut -d \" \" -f1 | rev) ",
+                    "  local targetDiskName=$(lsblk -b -o SERIAL,NAME,SIZE | grep $2 | head -n1 | cut -d \" \" -f2) ",
+                    "  local totalBytes=$(fdisk -l | grep \"$targetDiskName\" | head -n1 | cut -d \",\" -f2 | cut -d \" \" -f2) ",
+                    "  local blockCount=$((\"$totalBytes\" / 1048576)) ",
+                    "  echo \"Copying $1(${sourceDiskName})[${sourceDiskSize} Bytes] -- ${blockCount} blocks --> $2(${targetDiskName})[${targetDiskSize} Bytes]\" ",
+                    " ",
+                    "  dd_output=$(dd if=/dev/\"${sourceDiskName}\" of=/dev/\"${targetDiskName}\" bs=1M count=$blockCount status=progress) ",
+                    "  dd_result=$? ",
+                    "  echo \"$dd_output\" ",
+                    "  if [[ $dd_result -gt 0 ]]; then ",
+                    "    echo \"ERROR: An error occurred during the copy, dd return code $dd_result. Right-sizing cancelled!\" ",
+                    "    exit $dd_result ",
+                    "  else ",
+                    "    echo \"Copy completed. Starting verification...\" ",
+                    "  fi ",
+                    "  number_bytes=$(echo \"$dd_output\" | grep \"bytes\" | head -n1 | cut -d \" \" -f1) ",
+                    "  cmpResults=$(cmp /dev/\"${sourceDiskName}\" /dev/\"${targetDiskName}\" --bytes=\"$number_bytes\") ",
+                    "  echo \"$cmpResults\" ",
+                    "  cmp_result=$? ",
+                    "  echo \"$cmp_result\" ",
+                    "  if [[ $cmp_result -gt 0 ]]; then ",
+                    "    echo \"ERROR: An error occurred during the verification of the copy, cmp return code $dd_result. Right-sizing cancelled!\" ",
+                    "    exit $cmp_result ",
+                    "  fi ",
+                    " ",
+                    "  echo \"Copy and verification of volume copy completed successfully!\" ",
+                    "} ",
+                    " ",
+                    "for (( n=0; n < ${#oldVolumeIdArr[*]}; n++ )) ",
+                    "do ",
+                    "  validation=$(validate_volumes \"${oldVolumeIdArr[n]}\" \"${newVolumeIdArr[n]}\") ",
+                    "  echo \"$validation\" ",
+                    "  if [[ \"$validation\" == *\"ERROR\"* ]]; then ",
+                    "    ((validationErrors+=1)) ",
+                    "  fi ",
+                    "done ",
+                    " ",
+                    "if [[ $validationErrors -gt 0 ]]; then ",
+                    "  echo \"Errors found while validating volumes, copy cancelled!\" ",
+                    "  exit 1 ",
+                    "fi ",
+                    " ",
+                    "for (( i=0; i < ${#oldVolumeIdArr[*]}; i++ )) ",
+                    "do ",
+                    "  copyResult=$(copy_volumes \"${oldVolumeIdArr[i]}\" \"${newVolumeIdArr[i]}\") ",
+                    "  echo \"$copyResult\" ",
+                    "  if [[ \"$copyResult\" == *\"ERROR\"* ]]; then ",
+                    "    exit 1 ",
+                    "  fi ",
+                    "done"
+                  ],
+                  "executionTimeout": "172800"
+                }
+              },
+              "nextStep": "detachNewEBSVolumesFromHelper"
+            },
+            {
+              "name": "detachNewEBSVolumesFromHelper",
+              "action": "aws:executeScript",
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "handler",
+                "InputPayload": {
+                  "VolumeIds": "{{ createNewEBSVolumes.VolumeIds }}"
+                },
+                "Script": "import boto3\nimport botocore.exceptions\nimport json\n\nec2_client = boto3.client(\"ec2\")\n\n\ndef handler(event, _):\n    volumes = event[\"VolumeIds\"]\n    successful_detachments = []\n    unsuccessful_detachments = []\n    volume_ids = []\n\n    for volume in volumes:\n        volume_ids.append(volume)\n        detachment = detach_ebs_volume(volume)\n        if detachment:\n            successful_detachments.append(volume)\n        else:\n            unsuccessful_detachments.append(volume)\n\n    if len(unsuccessful_detachments) > 0:\n        print(\"The following volumes were not detached successfully %s\" % unsuccessful_detachments)\n\n    return successful_detachments\n\n\ndef detach_ebs_volume(volume_id):\n    try:\n        volume_detachment = ec2_client.detach_volume(\n            VolumeId=volume_id\n        )\n    except botocore.exceptions.ClientError as error_detach_volume:\n        print(\"ERROR: detachment of EBS volume %s\" % error_detach_volume)\n        return None\n\n    return volume_detachment\n\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "waitNewEBSVolumeDetachmentHelper"
+            },
+            {
+              "name": "waitNewEBSVolumeDetachmentHelper",
+              "action": "aws:waitForAwsResourceProperty",
+              "onFailure": "step:detachOriginalEBSVolumesFromHelper",
+              "onCancel": "step:detachOriginalEBSVolumesFromHelper",
+              "inputs": {
+                "VolumeIds": [
+                  "{{ createNewEBSVolumes.VolumeIds }}"
+                ],
+                "DesiredValues": [
+                  "available"
+                ],
+                "PropertySelector": "$.Volumes[0].State",
+                "Service": "ec2",
+                "Api": "DescribeVolumes"
+              },
+              "nextStep": "attachNewEBSVolumeInstance"
+            },
+            {
+              "name": "attachNewEBSVolumeInstance",
+              "action": "aws:executeAutomation",
+              "inputs": {
+                "DocumentName": "Right-sizing-multi-attach-EBS",
+                "RuntimeParameters": {
+                  "AutomationAssumeRole": "{{ AutomationAssumeRole }}",
+                  "InstanceId": "{{ InstanceId }}",
+                  "VolumeIds": "{{ createNewEBSVolumes.VolumeIds }}",
+                  "BootVolumeId": "{{ createNewEBSVolumes.BootVolumeId }}"
+                }
+              },
+              "onFailure": "step:detachOriginalEBSVolumesFromHelper",
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "startOptimizedInstance"
+            },
+            {
+              "name": "startOptimizedInstance",
+              "action": "aws:executeAwsApi",
+              "onFailure": "Abort",
+              "inputs": {
+                "Api": "StartInstances",
+                "Service": "ec2",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ]
+              },
+              "nextStep": "waitForOptimizedInstanceToStart"
+            },
+            {
+              "name": "waitForOptimizedInstanceToStart",
+              "action": "aws:waitForAwsResourceProperty",
+              "timeoutSeconds": 120,
+              "inputs": {
+                "DesiredValues": [
+                  "running"
+                ],
+                "Api": "DescribeInstances",
+                "PropertySelector": "$.Reservations[0].Instances[0].State.Name",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "Service": "ec2"
+              },
+              "nextStep": "terminateHelperInstance"
+            },
+            {
+              "name": "terminateHelperInstance",
+              "action": "aws:executeAwsApi",
+              "inputs": {
+                "Api": "TerminateInstances",
+                "Service": "ec2",
+                "InstanceIds": [
+                  "{{ launchHelperInstance.InstanceId }}"
+                ]
+              },
+              "isEnd": true
+            },
+            {
+              "name": "detachOriginalEBSVolumesFromHelper",
+              "action": "aws:executeScript",
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "handler",
+                "InputPayload": {
+                  "VolumeIds": "{{ getShrinkableEBSVolumesWindows.VolumeIds }}"
+                },
+                "Script": "import boto3\nimport botocore.exceptions\nimport json\n\nec2_client = boto3.client(\"ec2\")\n\n\ndef handler(event, _):\n    volumes = event[\"VolumeIds\"]\n    successful_detachments = []\n    unsuccessful_detachments = []\n    volume_ids = []\n\n    for volume in volumes:\n        volume_ids.append(volume)\n        detachment = detach_ebs_volume(volume)\n        if detachment:\n            successful_detachments.append(volume)\n        else:\n            unsuccessful_detachments.append(volume)\n\n    if len(unsuccessful_detachments) > 0:\n        print(\"The following volumes were not detached successfully %s\" % unsuccessful_detachments)\n\n    return successful_detachments\n\n\ndef detach_ebs_volume(volume_id):\n    try:\n        volume_detachment = ec2_client.detach_volume(\n            VolumeId=volume_id\n        )\n    except botocore.exceptions.ClientError as error_detach_volume:\n        print(\"ERROR: detachment of EBS volume %s\" % error_detach_volume)\n        return None\n\n    return volume_detachment\n\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ],
+              "nextStep": "waitOriginalEBSVolumesDetachmentHelper"
+            },
+            {
+              "name": "waitOriginalEBSVolumesDetachmentHelper",
+              "action": "aws:waitForAwsResourceProperty",
+              "inputs": {
+                "VolumeIds": [
+                  "{{ detachOriginalEBSVolumesFromHelper.VolumeIds }}"
+                ],
+                "DesiredValues": [
+                  "available"
+                ],
+                "PropertySelector": "$.Volumes[0].State",
+                "Service": "ec2",
+                "Api": "DescribeVolumes"
+              },
+              "nextStep": "attachOriginalEBSVolumesInstance"
+            },
+            {
+              "name": "attachOriginalEBSVolumesInstance",
+              "action": "aws:executeAutomation",
+              "inputs": {
+                "DocumentName": "Right-sizing-multi-attach-EBS",
+                "RuntimeParameters": {
+                  "AutomationAssumeRole": "{{ AutomationAssumeRole }}",
+                  "VolumeIds": "{{ getShrinkableEBSVolumesWindows.VolumeIds }}",
+                  "InstanceId": "{{ InstanceId }}",
+                  "BootVolumeId": "{{ getShrinkableEBSVolumesWindows.BootVolumeId }}"
+                }
+              },
+              "onFailure": "Abort",
+              "nextStep": "startOriginalInstance"
+            },
+            {
+              "name": "startOriginalInstance",
+              "action": "aws:executeAwsApi",
+              "inputs": {
+                "Api": "StartInstances",
+                "Service": "ec2",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ]
+              },
+              "nextStep": "waitForOriginalInstanceToStart"
+            },
+            {
+              "name": "waitForOriginalInstanceToStart",
+              "action": "aws:waitForAwsResourceProperty",
+              "timeoutSeconds": 120,
+              "inputs": {
+                "DesiredValues": [
+                  "running"
+                ],
+                "Api": "DescribeInstances",
+                "PropertySelector": "$.Reservations[0].Instances[0].State.Name",
+                "InstanceIds": [
+                  "{{ InstanceId }}"
+                ],
+                "Service": "ec2"
+              },
+              "nextStep": "terminateHelperInstance"
+            }
+          ],
+          "outputs": [
+            "shrinkInstanceVolumesWindows.Output"
+          ]
+        },
+        "DocumentFormat": "JSON",
+        "DocumentType": "Automation",
+        "Name": "Right-sizing-EBS",
+        "Requires": [
+          {
+            "Name": {
+              "Ref": "SSMAttachEBSDocument"
+            },
+            "Version": "$DEFAULT"
+          }
+        ],
+        "UpdateMethod": "NewVersion"
+      }
+    },
+    "SSMAttachEBSDocument": {
+      "Type": "AWS::SSM::Document",
+      "Properties": {
+        "Content": {
+          "schemaVersion": "0.3",
+          "description": "Attach multiple EBS volumes to an instance",
+          "assumeRole": "{{ AutomationAssumeRole }}",
+          "parameters": {
+            "AutomationAssumeRole": {
+              "type": "String",
+              "description": "(Optional) The IAM role for this execution. If no role is specified, AWS Systems Manager Automation will use the permissions of the user that executes this document.",
+              "default": ""
+            },
+            "InstanceId": {
+              "type": "String",
+              "description": "(Required) ID of your EC2 Windows managed instance.",
+              "allowedPattern": "^[m]{0,1}i-[a-z0-9]{8,17}$"
+            },
+            "VolumeIds": {
+              "type": "StringList",
+              "description": "(Required) VolumeIDs to Attach to Instance",
+              "allowedPattern": "^vol-[a-z0-9]{8,17}$"
+            },
+            "BootVolumeId": {
+              "type": "String",
+              "description": "(Optional) VolumeID to be mounted as boot volume.",
+              "default": "",
+              "allowedPattern": "^$|vol-[a-z0-9]{8,17}$"
+            }
+          },
+          "mainSteps": [
+            {
+              "name": "attachEBSVolumesToInstance",
+              "action": "aws:executeScript",
+              "nextStep": "waitEBSVolumesAttached",
+              "isEnd": false,
+              "inputs": {
+                "Runtime": "python3.8",
+                "Handler": "handler",
+                "InputPayload": {
+                  "VolumeIds": "{{ VolumeIds }}",
+                  "InstanceId": "{{ InstanceId }}",
+                  "BootVolumeId": "{{ BootVolumeId }}"
+                },
+                "Script": "import boto3\nimport botocore.exceptions\n\nec2_client = boto3.client(\"ec2\")\nattached_devices_names = []\n\ndef handler(event, _):\n    volumes = event[\"VolumeIds\"]\n    instance_id = event[\"InstanceId\"]\n    boot_volume_id = None\n\n    if 'BootVolumeId' in event:\n        boot_volume_id = event[\"BootVolumeId\"]\n\n    successful_attachments = []\n    unsuccessful_attachments = []\n    max_volumes = 13\n\n    # cannot attach more than 13 volumes to the instance.\n    if len(volumes) > max_volumes:\n        print(\"Maximum volume attachments is %d, this instance contains %s\" % (max_volumes, len(volumes)))\n        for volume in volumes:\n            unsuccessful_attachments.append(volume)\n        print(\"The following volumes were not attached successfully %s\" % unsuccessful_attachments)\n        return []\n\n    for volume in volumes:\n        is_boot = False\n        if volume == boot_volume_id:\n            is_boot = True\n        attachment = attach_ebs_volume(volume, instance_id, is_boot)\n        if attachment:\n            successful_attachments.append(volume)\n        else:\n            unsuccessful_attachments.append(volume)\n\n    if unsuccessful_attachments:\n        raise(\"The following volumes were not attached successfully %s\" % unsuccessful_attachments)\n\n    return successful_attachments\n\n\ndef attach_ebs_volume(volume_id, instance_id, is_boot=False):\n    if is_boot:\n        device_name = '/dev/sda1'\n    else:\n        device_name = find_free_device_name(instance_id, attached_devices_names)\n\n    if device_name is None:\n        print(\"No device name free.\")\n        return None\n\n    try:\n        volume_attachment = ec2_client.attach_volume(\n            Device=device_name,\n            InstanceId=instance_id,\n            VolumeId=volume_id\n\n        )\n    except botocore.exceptions.ClientError as error_attach_volume:\n        print(\"ERROR: attachment of EBS volume %s\" % error_attach_volume)\n        return None\n\n    attached_devices_names.append(volume_attachment.get('Device'))\n\n    print(volume_attachment)\n    return volume_attachment\n\n\ndef find_free_device_name(instance_id, excluded_device_names=None):\n    device_name_prefix = \"/dev/sd\"\n    device_start_letter = \"b\"\n    device_end_letter = \"z\"\n    device_current_letter = device_start_letter\n\n    if excluded_device_names is None:\n        excluded_device_names = []\n\n    try:\n        # get instance details.\n        describe_instance = ec2_client.describe_instances(\n            InstanceIds=[\n                instance_id,\n            ]\n        )\n\n    except botocore.exceptions.ClientError as error_instance:\n        print(\"ERROR: describe_instance of %s - %s\" % (instance_id, error_instance))\n        return None\n\n    # Search for free device name\n    if 'Reservations' in describe_instance and len(describe_instance[\n                                                       'Reservations']) > 0 and 'Instances' in describe_instance[\n        'Reservations'][0] and 'BlockDeviceMappings' in \\\n        describe_instance['Reservations'][0]['Instances'][0]:\n        instance_ebs_mappings = describe_instance['Reservations'][0]['Instances'][0]['BlockDeviceMappings']\n        find_device_name = False\n\n        while not find_device_name:\n            find_device_names = [\n                volume for volume in instance_ebs_mappings\n                if volume.get('DeviceName') == f\"{device_name_prefix}{device_current_letter}\" or\n                   f\"{device_name_prefix}{device_current_letter}\" in excluded_device_names\n            ]\n\n            if len(find_device_names) > 0:\n                device_current_letter = chr(ord(device_current_letter) + 1)\n            else:\n                find_device_name = True\n\n        return f\"{device_name_prefix}{device_current_letter}\"\n    else:\n        print(\"Instance not correct: %s\" % describe_instance)\n        return None\n"
+              },
+              "outputs": [
+                {
+                  "Name": "VolumeIds",
+                  "Selector": "$.Payload",
+                  "Type": "StringList"
+                }
+              ]
+            },
+            {
+              "name": "waitEBSVolumesAttached",
+              "action": "aws:waitForAwsResourceProperty",
+              "timeoutSeconds": 45,
+              "isEnd": true,
+              "inputs": {
+                "Service": "ec2",
+                "Api": "DescribeVolumes",
+                "VolumeIds": "{{ VolumeIds }}",
+                "PropertySelector": "$.Volumes[0].Attachments[0].State",
+                "DesiredValues": [
+                  "attached"
+                ]
+              }
+            }
+          ]
+        },
+        "DocumentFormat": "JSON",
+        "DocumentType": "Automation",
+        "Name": "Right-sizing-multi-attach-EBS",
+        "UpdateMethod": "NewVersion"
+      }
+    },
+    "RightSizingRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "EBS-right-sizing",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ssm.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "RightSizingRole",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "VisualEditor0",
+                  "Effect": "Allow",
+                  "Action": "ec2:TerminateInstances",
+                  "Resource": "*",
+                  "Condition": {
+                    "StringLike": {
+                      "aws:ResourceTag/Name": "AWS EBS right-sizing helper instance for *"
+                    }
+                  }
+                },
+                {
+                  "Sid": "VisualEditor1",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:DetachVolume",
+                    "ec2:AttachVolume",
+                    "ec2:DeleteVolume",
+                    "iam:GetInstanceProfile",
+                    "ssm:SendCommand",
+                    "ec2:DescribeInstances",
+                    "ec2:CreateTags",
+                    "ec2:CreateImage",
+                    "ec2:RunInstances",
+                    "ec2:StopInstances",
+                    "ec2:CreateVolume",
+                    "ec2:DescribeImages",
+                    "ec2:StartInstances",
+                    "ec2:DescribeVolumes",
+                    "ec2:DescribeInstanceStatus",
+                    "ssm:DescribeInstanceInformation",
+                    "ssm:GetParameter",
+                    "ssm:GetParameters",
+                    "ssm:ListCommandInvocations",
+                    "ssm:ListCommands",
+                    "ec2:TerminateInstances",
+                    "ssm:GetAutomationExecution",
+                    "kms:DescribeKey",
+                    "kms:CreateGrant",
+                    "kms:ReEncrypt*",
+                    "kms:GenerateDataKey*",
+                    "kms:Encrypt",
+                    "kms:Decrypt"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "VisualEditor2",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:SendCommand",
+                    "iam:PassRole",
+                    "iam:GetInstanceProfile"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:document/Right-sizing-multi-attach-EBS"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "VisualEditor3",
+                  "Effect": "Allow",
+                  "Action": "ssm:StartAutomationExecution",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/Right-sizing-multi-attach-EBS:*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

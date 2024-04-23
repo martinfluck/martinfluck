@@ -1,0 +1,242 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "FSx for Windows - Enter Cluster/Hostname Here",
+    "Parameters": {
+        "StorageCapacity": {
+            "Type": "String",
+            "Default": "32",
+            "Description": "(REQUIRED) Enter the required storage capacity"
+        },
+        "StorageType": {
+            "Default": "SSD",
+            "Description": "Choose the storage option, HDD or SSD",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Default": "Enter a VPC Id Here",
+            "Description": "VPC Id where FSx volume with be deployed",
+            "Type": "String"
+        },
+        "PrivateSubnet": {
+            "Default": "Enter a Subnet Id here",
+            "Description": "CIDR Block for the private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PreferredSubnetId": {
+            "Default": "Enter a Subnet Id here",
+            "Description": "FSx Share for SQL Cluster for OMW QA",
+            "Type": "String"
+        },
+        "ActiveDirectoryId": {
+            "Description": "(REQUIRED) 'Active Directory ID'",
+            "Type": "String",
+            "Default": "Enter a Managed AD Id here"
+        },
+        "AutomaticBackupRetentionDays": {
+            "Default": "8",
+            "Description": "(REQUIRED) Automatic Backup Retention Days, 8 days for Non-Prod and 35 days for Prod",
+            "Type": "String"
+        },
+        "DeploymentType": {
+            "Default": "SINGLE_AZ_2",
+            "Description": "(REQUIRED) Options include Single-AZ and Multi-AZ",
+            "Type": "String"
+        }
+    },
+    "Outputs": {
+        "FsxName": {
+            "Value": {
+                "Ref": "WindowsFsx"
+            }
+        }
+    },
+    "Mappings": {
+        "ResourceTags": {
+            "FSx": {
+                "Name": "placeholder",
+                "FileSystemName": "placeholder",
+                "BudgetCentre": "placeholder",
+                "Department": "placeholder",
+                "Owner": "placeholder",
+                "OwnerTeam": "placeholder",
+                "BusinessUnit": "placeholder",
+                "SupportContact": "placeholder",
+                "OwnerTeamEmail": "place@holder.com",
+                "AppName": "placeholder",
+                "AppId": "placeholder"
+            }
+        }
+    },
+    "Resources": {
+        "WindowsFsx": {
+            "Type": "AWS::FSx::FileSystem",
+            "Properties": {
+                "FileSystemType": "WINDOWS",
+                "StorageCapacity": {
+                    "Ref": "StorageCapacity"
+                },
+                "StorageType": {
+                    "Ref": "StorageType"
+                },
+                "SubnetIds": [
+                    {
+                        "Ref": "PrivateSubnet"
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "FSxSecurityGroup"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "Name"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "FileSystemName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "FileSystemName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Owner",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "Owner"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "FSx",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "aws-migration-project-id",
+                        "Value": "MPE01793"
+                    },
+                    {
+                        "Key": "map-migrated",
+                        "Value": "d-server-03oeyfdbcdlmap"
+                    }
+                ],
+                "WindowsConfiguration": {
+                    "ActiveDirectoryId": {
+                        "Ref": "ActiveDirectoryId"
+                    },
+                    "ThroughputCapacity": 32,
+                    "AutomaticBackupRetentionDays": {
+                        "Ref": "AutomaticBackupRetentionDays"
+                    },
+                    "DeploymentType": {
+                        "Ref": "DeploymentType"
+                    },
+                    "PreferredSubnetId": {
+                        "Ref": "PreferredSubnetId"
+                    },
+                    "CopyTagsToBackups": false
+                }
+            }
+        },
+        "FSxSecurityGroup":{
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupName": "fsx_security_group",
+                "GroupDescription" : "Allow SMB access to client host",
+                "VpcId" : {"Ref" : "VpcId"},
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 445,
+                        "ToPort": 445,
+                        "CidrIp": "10.0.0.0/8"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 5985,
+                        "ToPort": 5985,
+                        "CidrIp": "10.0.0.0/8"
+                    }
+                ]
+            }
+        }
+    }
+}

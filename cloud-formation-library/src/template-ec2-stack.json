@@ -1,0 +1,840 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "EC2 instance in AWS EC2 service - Enter Hostname here",
+    "Parameters": {
+        "PrivateSubnet1": {
+            "Default": "Paste Subnet Id here",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "WebServerSecurityGroup": {
+            "Default": "Paste the newly created SG Id here",
+            "Description": "Security Group used for application and web access",
+            "Type": "String"
+        },
+        "AMSSecurityGroup": {
+            "Default": "Paste the AMS Default SG Id here",
+            "Description": "Security Group used for application and web access",
+            "Type": "String"
+        },
+        "HostName": {
+            "Default": "Enter the server host name here",
+            "Description": "Change this parameter according to hostname used on prem",
+            "Type": "String"
+        },
+        "EC2InstanceProfile": {
+            "Default": "customer-mc-ec2-instance-profile-s3",
+            "Type": "String",
+            "Description": "Change this parameter to assign different AWS resource access permissions to your EC2 instance"
+        },
+        "InstanceType": {
+            "Default": "m5.2xlarge",
+            "Description": "Enter the instance type you require for your compute requirements",
+            "Type": "String"
+        },
+        "DataVolume1Type": {
+            "Default": "gp3",
+            "Description": "Enter a value (in GB) for your EBS volume size",
+            "Type": "String"
+        },
+        "DataVolume1Snapshot": {
+            "Default": "Insert Snapshot Id here",
+            "Description": "Data Volume Snapshot Id from the AMI",
+            "Type": "String"
+        },
+        "DataVolume2Type": {
+            "Default": "gp3",
+            "Description": "Enter a value (in GB) for your EBS volume size",
+            "Type": "String"
+        },
+        "DataVolume2Snapshot": {
+            "Default": "Insert Snapshot Id here",
+            "Description": "Data Volume Snapshot Id from the AMI",
+            "Type": "String"
+        },
+        "TerminationProtection": {
+            "Default": true,
+            "Description": "Set to false if you need to terminate the instance",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "RegionAMI": {
+            "eu-west-1": {
+                "Windows": "ami-0023f4515e6febc45",
+                "Linux": "ami-01215b911b4ea4c21"
+            }
+        },
+        "ResourceTags": {
+            "all": {
+                "AMSPatchGroup": "placeholder",
+                "AMSDefaultPatchGroup": "true",
+                "AppName": "placeholder",
+                "AppId": "placeholder",
+                "awsmigrationprojectid": "MPE01793",
+                "Backup": "true",
+                "BudgetCentre": "placeholder",
+                "Department": "placeholder",
+                "Environment": "placeholder",
+                "mapmigrated": "d-server-00jtftf6wtphvt",
+                "PatchGroup": "1",
+                "OwnerTeam": "placeholder",
+                "OwnerTeamEmail": "placeholder",
+                "SupportContact": "placeholder",
+                "WaveId": "placeholder"
+            },
+            "EC2": {
+                "PatchOrder": "1",
+                "HoursOfOperation": "24x7",
+                "DataClassification": "Internal"
+            }
+        }
+    },
+    "Resources": {
+        "Instance1": {
+            "Type": "AWS::EC2::Instance",
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT45M"
+                }
+            },
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "DisableApiTermination": {"Ref":"TerminationProtection"},
+                "Tenancy": "default",
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "RegionAMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "Windows"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1"
+                },
+                "EbsOptimized": true,
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "WebServerSecurityGroup"
+                    },
+                    {
+                        "Ref": "AMSSecurityGroup"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "Encrypted": true,
+                            "VolumeSize": 100,
+                            "VolumeType": "gp3"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/sdb",
+                        "NoDevice": {}
+                    },
+                    {
+                        "DeviceName": "/dev/sdc",
+                        "NoDevice": {}
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "DataClassification",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "DataClassification"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {"Ref":"HostName"}
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Backup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Backup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "HoursOfOperations",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "HoursOfOperation"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Patch Group",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "PatchOrder"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSDefaultPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSDefaultPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "wave_id",
+                        "Value": {
+                          "Fn::FindInMap": [
+                            "ResourceTags",
+                            "all",
+                            "WaveId"
+                          ]
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "EC2InstanceProfile"
+                }
+            }
+        },
+        "Instance1Volume1": {
+            "Type": "AWS::EC2::Volume",
+            "Properties": {
+                "VolumeType": {
+                    "Ref": "DataVolume1Type"
+                },
+                "SnapshotId": {"Ref": "DataVolume1Snapshot"},
+                "AvailabilityZone": {
+                    "Fn::GetAtt": [
+                        "Instance1",
+                        "AvailabilityZone"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "_",
+                                [
+                                    {"Ref": "HostName"},
+                                    "Data",
+                                    "Vol",
+                                    "1"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Backup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Backup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "HoursOfOperations",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "HoursOfOperation"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "DataClassification",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "DataClassification"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Patch Group",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "PatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSDefaultPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSDefaultPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    }
+                ],
+                "Encrypted": true
+            }
+        },
+        "Instance1MountPoint1": {
+            "Type": "AWS::EC2::VolumeAttachment",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "Instance1"
+                },
+                "VolumeId": {
+                    "Ref": "Instance1Volume1"
+                },
+                "Device": "/dev/sdb"
+            }
+        },
+        "Instance1Volume2": {
+            "Type": "AWS::EC2::Volume",
+            "Properties": {
+                "VolumeType": {
+                    "Ref": "DataVolume2Type"
+                },
+                "SnapshotId": {"Ref": "DataVolume2Snapshot"},
+                "AvailabilityZone": {
+                    "Fn::GetAtt": [
+                        "Instance1",
+                        "AvailabilityZone"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "_",
+                                [
+                                    {"Ref": "HostName"},
+                                    "Data",
+                                    "Vol",
+                                    "2"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Backup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Backup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "HoursOfOperations",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "HoursOfOperation"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "DataClassification",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "EC2",
+                                "DataClassification"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Patch Group",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "PatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSDefaultPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSDefaultPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    }
+                ],
+                "Encrypted": true
+            }
+        },
+        "Instance1MountPoint2": {
+            "Type": "AWS::EC2::VolumeAttachment",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "Instance1"
+                },
+                "VolumeId": {
+                    "Ref": "Instance1Volume2"
+                },
+                "Device": "/dev/sdc"
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceId": {
+            "Description": "Instance Id of the newly created instance.",
+            "Value": { "Ref": "Instance1" }
+        },
+        "InstancePrivateIP": {
+            "Description": "Private IP address of the new newly created instance.",
+            "Value": { "Fn::GetAtt": [ "Instance1", "PrivateIp" ] }
+        }
+    }
+}

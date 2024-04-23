@@ -1,0 +1,624 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "An application security group in AWS EC2 ENI - Dummy-ENI-for-blackhole-network",
+    "Parameters": {
+        "VpcId": {
+            "Default": "vpc-07f86d8b5a6201929",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "SubnetId1": {
+            "Default": "subnet-069f71e55ceba3e57",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "SubnetId2": {
+            "Default": "subnet-0eb2d98bbb88f27c3",
+            "Description": "(REQUIRED) Select Private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "SourceDestCheck":{
+            "Default": "false",
+            "Description": "Enable or disable source and destination checking",
+            "Type": "String"
+        },
+        "DestinationCidr":{
+            "Default": "10.0.0.0/8",
+            "Description": "Destination CIDR block",
+            "Type": "String"
+        },
+        "RouteTable1Id":{
+            "Default": "rtb-0ea8cb762e7a7e3ae",
+            "Description": "Route table attached to blackhole subnet",
+            "Type": "String"
+        },
+        "RouteTable2Id":{
+            "Default": "rtb-048ea6423bd8cf472",
+            "Description": "Route table attached to blackhole subnet",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "ResourceTags": {
+            "all": {
+                "AMSPatchGroup": "placeholder",
+                "awsmigrationprojectid": "MPE01793",
+                "AppName": "placeholder",
+                "AppId": "placeholder",
+                "Backup": "true",
+                "BudgetCentre": "placeholder",
+                "Department": "Migration Execution",
+                "Environment": "NonProd",
+                "SupportContact": "placeholder",
+                "OwnerTeam": "ProServe",
+                "OwnerTeamEmail": "placeholder",
+                "mapmigrated": "d-server-00jtftf6wtphvt"
+            }
+        }
+    },
+    "Resources": {
+        "ENI1" : {
+            "Type" : "AWS::EC2::NetworkInterface",
+            "Properties" : {
+                "Description": "Dummy ENI 1 For Blackhole Route In Subnet",
+                "SourceDestCheck": {"Ref": "SourceDestCheck"},
+                "SubnetId": {"Ref": "SubnetId1"},
+                "GroupSet" : [{ "Ref" : "SecurityGroup" }],
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "Dummy",
+                                    "ENI",
+                                    "1",
+                                    "Blackhole",
+                                    "Subnet"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ENI2" : {
+            "Type" : "AWS::EC2::NetworkInterface",
+            "Properties" : {
+                "Description": "Dummy ENI 2 for Blackhole Route In Subnet",
+                "SourceDestCheck": {"Ref": "SourceDestCheck"},
+                "SubnetId": {"Ref": "SubnetId2"},
+                "GroupSet" : [{ "Ref" : "SecurityGroup" }],
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "Dummy",
+                                    "ENI",
+                                    "2",
+                                    "Blackhole",
+                                    "Subnet"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "SecurityGroup":{
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupName": {"Fn::Join": [
+                    "-",
+                    [
+                        "BlackHole",
+                        "Security",
+                        "Group"
+                    ]
+                ]},
+                "GroupDescription" : "Allow access to client host",
+                "VpcId" : {"Ref" : "VpcId"},
+                "SecurityGroupIngress": [],
+                "Tags": [
+                    {
+                        "Key": "BudgetCentre",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "BudgetCentre"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "SupportContact",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "SupportContact"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeamEmail",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeamEmail"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "map",
+                                    "migrated"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "mapmigrated"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "aws",
+                                    "migration",
+                                    "project",
+                                    "id"
+                                ]
+                            ]
+                        },
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "awsmigrationprojectid"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Environment"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "OwnerTeam",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "OwnerTeam"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppId",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppId"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Department",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "Department"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AppName",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AppName"
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "AMSPatchGroup",
+                        "Value": {
+                            "Fn::FindInMap": [
+                                "ResourceTags",
+                                "all",
+                                "AMSPatchGroup"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "SGIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+               "GroupId": {
+                  "Ref": "SecurityGroup"
+               },
+               "IpProtocol": "-1",
+               "SourceSecurityGroupId": {
+                  "Fn::GetAtt": [
+                     "SecurityGroup",
+                     "GroupId"
+                  ]
+               }
+            } 
+        },
+        "Route1" : {
+            "Type" : "AWS::EC2::Route",
+            "Properties" : {
+                "RouteTableId" : {"Ref" : "RouteTable1Id"},
+                "DestinationCidrBlock" : {"Ref" : "DestinationCidr"},
+                "NetworkInterfaceId":  {"Fn::GetAtt": ["ENI1", "Id"]}
+            }
+        },
+        "Route2" : {
+            "Type" : "AWS::EC2::Route",
+            "Properties" : {
+                "RouteTableId" : {"Ref" : "RouteTable2Id"},
+                "DestinationCidrBlock" : {"Ref" : "DestinationCidr"},
+                "NetworkInterfaceId":  {"Fn::GetAtt": ["ENI2", "Id"]}
+            }
+        }
+    },
+    "Outputs": {
+        "ENIId1": {
+            "Description": "ENI Id of the newly created interface.",
+            "Value": { "Fn::GetAtt": [ "ENI1", "Id" ] }
+        },
+        "ENI1PrivateIP": {
+            "Description": "Private IP address of the new newly created interface.",
+            "Value": { "Fn::GetAtt": [ "ENI1", "PrimaryPrivateIpAddress" ] }
+        },
+        "ENIId2": {
+            "Description": "ENI Id of the newly created interface.",
+            "Value": { "Fn::GetAtt": [ "ENI1", "Id" ] }
+        },
+        "ENI2PrivateIP": {
+            "Description": "Private IP address of the new newly created interface.",
+            "Value": { "Fn::GetAtt": [ "ENI1", "PrimaryPrivateIpAddress" ] }
+        }
+    }
+}
